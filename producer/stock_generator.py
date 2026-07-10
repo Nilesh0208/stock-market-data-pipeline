@@ -1,35 +1,67 @@
 import random
-from datetime import datetime
 
-STOCKS = {
-    "AAPL": 190,
-    "GOOGL": 175,
-    "MSFT": 450,
-    "AMZN": 185,
-    "TSLA": 250,
-    "NVDA": 125,
-    "META": 520
-}
+STOCKS = [
+    {
+        "symbol": "AAPL",
+        "company": "Apple Inc",
+        "exchange": "NASDAQ",
+        "currency": "USD",
+        "base_price": 195.00
+    },
+    {
+        "symbol": "MSFT",
+        "company": "Microsoft Corporation",
+        "exchange": "NASDAQ",
+        "currency": "USD",
+        "base_price": 510.00
+    },
+    {
+        "symbol": "GOOGL",
+        "company": "Alphabet Inc",
+        "exchange": "NASDAQ",
+        "currency": "USD",
+        "base_price": 179.00
+    },
+    {
+        "symbol": "AMZN",
+        "company": "Amazon.com Inc",
+        "exchange": "NASDAQ",
+        "currency": "USD",
+        "base_price": 225.00
+    },
+    {
+        "symbol": "TSLA",
+        "company": "Tesla Inc",
+        "exchange": "NASDAQ",
+        "currency": "USD",
+        "base_price": 315.00
+    }
+]
 
 
 def generate_stock():
-    symbol = random.choice(list(STOCKS.keys()))
+    """
+    Generate a random stock market event.
+    """
 
-    base_price = STOCKS[symbol]
+    # Select a random stock
+    stock = random.choice(STOCKS)
 
+    # Generate a realistic price around the stock's base price
     price = round(
-        base_price + random.uniform(-5, 5),
+        stock["base_price"] + random.uniform(-5, 5),
         2
     )
 
-    volume = random.randint(
-        100,
-        10000
-    )
+    # Generate a random trading volume
+    volume = random.randint(1000, 10000)
 
+    # Return stock data
     return {
-        "symbol": symbol,
+        "symbol": stock["symbol"],
+        "company": stock["company"],
+        "exchange": stock["exchange"],
+        "currency": stock["currency"],
         "price": price,
-        "volume": volume,
-        "timestamp": datetime.utcnow().isoformat()
+        "volume": volume
     }

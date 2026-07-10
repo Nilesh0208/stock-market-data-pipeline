@@ -1,0 +1,118 @@
+name: stock-market-pipeline
+services:
+
+  postgres:
+    image: postgres:16
+    container_name: stock-postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_USER: stock_user
+      POSTGRES_PASSWORD: stock_password
+      POSTGRES_DB: stock_market
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: stock-pgadmin
+    restart: unless-stopped
+
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@stock.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+
+    ports:
+      - "8080:80"
+
+    depends_on:
+      - postgres
+
+  stock-kafka:
+    image: apache/kafka:3.8.0
+    container_name: stock-kafka
+
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+
+    environment:
+      KAFKA_NODE_ID: 1
+
+      KAFKA_PROCESS_ROLES: broker,controller
+
+      KAFKA_LISTENERS: >
+        PLAINTEXT_HOST://:9092,
+        PLAINTEXT_DOCKER://:29092,
+        CONTROLLER://:9093
+
+      KAFKA_ADVERTISED_LISTENERS: >
+        PLAINTEXT_HOST://localhost:9092,
+        PLAINTEXT_DOCKER://stock-kafka:29092
+
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: >
+        PLAINTEXT_HOST:PLAINTEXT,
+        PLAINTEXT_DOCKER:PLAINTEXT,
+        CONTROLLER:PLAINTEXT
+
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_DOCKER
+
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@stock-kafka:9093
+
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+  spark-master:
+    image: apache/spark:3.5.6
+    container_name: stock-spark-master
+    hostname: spark-master
+    restart: unless-stopped
+
+    command: >
+      /opt/spark/bin/spark-class
+      org.apache.spark.deploy.master.Master
+      --host spark-master
+      --port 7077
+      --webui-port 8080
+
+    ports:
+      - "7077:7077"
+      - "8082:8080"
+
+    volumes:
+      - ../spark:/opt/spark-apps
+
+  spark-worker:
+    image: apache/spark:3.5.6
+    container_name: stock-spark-worker
+    hostname: spark-worker
+    restart: unless-stopped
+
+    command: >
+      /opt/spark/bin/spark-class
+      org.apache.spark.deploy.worker.Worker
+      spark://spark-master:7077
+      --webui-port 8081
+
+    depends_on:
+      - spark-master
+
+    ports:
+      - "8081:8081"
+
+    volumes:
+      - ../spark:/opt/spark-apps
+
+volumes:
+  postgres_data:

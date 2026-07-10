@@ -1,6 +1,7 @@
 import time
 
 from config.settings import settings
+from .event_builder import build_event
 from .kafka_producer import StockKafkaProducer
 from .logger import logger
 from .stock_generator import generate_stock
@@ -14,13 +15,14 @@ def main():
     try:
         while True:
             stock = generate_stock()
+            event = build_event(stock)
 
             producer.send(
-                message=stock,
-                key=stock["symbol"]
+                message=event,
+                key=event["symbol"]
             )
 
-            logger.info(stock)
+            logger.info(event)
 
             time.sleep(
                 settings.PRODUCER_INTERVAL_SECONDS
