@@ -4,9 +4,13 @@ Spark Structured Streaming Kafka Consumer
 Reads stock market events from Kafka topic
 and displays streaming data.
 """
-from pyspark.sql.types import *
 from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
 from pyspark.sql.functions import col, from_json, to_timestamp
+from silver_transformations import (
+    transform_to_silver,
+    transform_to_rejected,
+)
 from pyspark.sql.types import (
     StructType,
     StructField,
@@ -14,7 +18,6 @@ from pyspark.sql.types import (
     DoubleType,
     IntegerType
 )
-
 
 def create_spark_session():
 
@@ -30,6 +33,13 @@ def create_spark_session():
 
 def write_to_postgres(batch_df, batch_id):
 
+    if batch_df.isEmpty():
+        print(f"Batch {batch_id} is empty")
+        return
+
+    print(f"Processing batch {batch_id}")
+
+    # Step 1: Write raw records to Bronze
     (
         batch_df.write
         .format("jdbc")
@@ -42,7 +52,124 @@ def write_to_postgres(batch_df, batch_id):
         .save()
     )
 
-    print(f"Batch {batch_id} written to PostgreSQL")
+    print(f"Batch {batch_id} written to bronze.stock_events")
+
+    # Step 2: Build valid and rejected DataFrames
+    silver_df = transform_to_silver(batch_df)
+
+    staging_df = (
+        silver_df
+        .withColumn(
+            "spark_batch_id",
+            F.lit(batch_id).cast("long")
+        )
+    )    
+
+    rejected_df = (
+        transform_to_rejected(batch_df)
+        .withColumn(
+            "batch_id",
+            F.lit(batch_id).cast("long")
+        )
+    )
+    
+
+    # Display valid Silver records
+    print(f"Silver output for batch {batch_id}")
+
+    silver_df.show(
+        n=20,
+        truncate=False
+    )
+
+    # Step 3: Write valid records to Silver
+    (
+        staging_df.write
+        .format("jdbc")
+        .option(
+            "url",
+            "jdbc:postgresql://postgres:5432/stock_market"
+        )
+        .option(
+            "dbtable",
+            "silver.stock_events_staging"
+        )
+        .option("user", "stock_user")
+        .option("password", "stock_password")
+        .option("driver", "org.postgresql.Driver")
+        .mode("append")
+        .save()
+    )
+
+    print(
+        f"Batch {batch_id} written to "
+        "silver.stock_events_staging"
+    )
+
+    # Execute PostgreSQL staging-to-Silver merge
+    spark = batch_df.sparkSession
+
+    merge_query = (
+        f"SELECT silver.merge_stock_events({batch_id}) "
+        "AS inserted_count"
+    )
+
+    merge_result = (
+        spark.read
+        .format("jdbc")
+        .option(
+            "url",
+            "jdbc:postgresql://postgres:5432/stock_market"
+        )
+        .option("query", merge_query)
+        .option("user", "stock_user")
+        .option("password", "stock_password")
+        .option("driver", "org.postgresql.Driver")
+        .load()
+        .collect()
+    )
+
+    inserted_count = merge_result[0]["inserted_count"]
+
+    print(
+        f"Batch {batch_id} merged into silver.stock_events. "
+        f"New rows inserted: {inserted_count}"
+    )    
+
+    # Check rejected records
+    rejected_count = rejected_df.count()
+
+    print(f"Rejected records in batch {batch_id}: {rejected_count}")
+
+    if rejected_count > 0:
+
+        rejected_df.show(
+            n=20,
+            truncate=False
+        )
+
+        (
+            rejected_df.write
+            .format("jdbc")
+            .option(
+                "url",
+                "jdbc:postgresql://postgres:5432/stock_market"
+            )
+            .option(
+                "dbtable",
+                "silver.stock_events_rejected"
+            )
+            .option("user", "stock_user")
+            .option("password", "stock_password")
+            .option("driver", "org.postgresql.Driver")
+            .mode("append")
+            .save()
+        )
+
+        print(
+            f"Rejected records from batch {batch_id} "
+            "written to silver.stock_events_rejected"
+        )
 
 def main():
 
