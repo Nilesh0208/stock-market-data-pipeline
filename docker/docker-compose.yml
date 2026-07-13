@@ -82,10 +82,16 @@ services:
       - kafka_data:/var/lib/kafka/data
 
   spark-master:
-    image: apache/spark:3.5.6
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    image: stock-spark:3.5.6
     container_name: stock-spark-master
     hostname: spark-master
     restart: unless-stopped
+
+    environment:
+      PYTHONPATH: /opt/spark-apps
 
     command: >
       /opt/spark/bin/spark-class
@@ -101,12 +107,19 @@ services:
     volumes:
       - ../spark:/opt/spark-apps
       - spark_checkpoints:/opt/spark-checkpoints
+      - ../config:/opt/spark-apps/config
 
   spark-worker:
-    image: apache/spark:3.5.6
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    image: stock-spark:3.5.6
     container_name: stock-spark-worker
     hostname: spark-worker
     restart: unless-stopped
+
+    environment:
+      PYTHONPATH: /opt/spark-apps
 
     command: >
       /opt/spark/bin/spark-class
@@ -123,6 +136,7 @@ services:
     volumes:
       - ../spark:/opt/spark-apps
       - spark_checkpoints:/opt/spark-checkpoints
+      - ../config:/opt/spark-apps/config
 
 volumes:
   postgres_data:

@@ -6,6 +6,7 @@ and displays streaming data.
 """
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
+from jdbc_utils import get_postgres_options
 from pyspark.sql.functions import col, from_json, to_timestamp
 from silver_transformations import (
     transform_to_silver,
@@ -43,11 +44,11 @@ def write_to_postgres(batch_df, batch_id):
     (
         batch_df.write
         .format("jdbc")
-        .option("url", "jdbc:postgresql://postgres:5432/stock_market")
-        .option("dbtable", "bronze.stock_events")
-        .option("user", "stock_user")
-        .option("password", "stock_password")
-        .option("driver", "org.postgresql.Driver")
+        .options(
+            **get_postgres_options(
+                table_name="bronze.stock_events"
+            )
+        )
         .mode("append")
         .save()
     )
@@ -86,17 +87,11 @@ def write_to_postgres(batch_df, batch_id):
     (
         staging_df.write
         .format("jdbc")
-        .option(
-            "url",
-            "jdbc:postgresql://postgres:5432/stock_market"
+        .options(
+            **get_postgres_options(
+                table_name="silver.stock_events_staging"
+            )
         )
-        .option(
-            "dbtable",
-            "silver.stock_events_staging"
-        )
-        .option("user", "stock_user")
-        .option("password", "stock_password")
-        .option("driver", "org.postgresql.Driver")
         .mode("append")
         .save()
     )
@@ -151,17 +146,11 @@ def write_to_postgres(batch_df, batch_id):
         (
             rejected_df.write
             .format("jdbc")
-            .option(
-                "url",
-                "jdbc:postgresql://postgres:5432/stock_market"
+            .options(
+                **get_postgres_options(
+                    table_name="silver.stock_events_rejected"
+                )
             )
-            .option(
-                "dbtable",
-                "silver.stock_events_rejected"
-            )
-            .option("user", "stock_user")
-            .option("password", "stock_password")
-            .option("driver", "org.postgresql.Driver")
             .mode("append")
             .save()
         )
