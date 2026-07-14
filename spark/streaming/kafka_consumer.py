@@ -6,6 +6,7 @@ and displays streaming data.
 """
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
+from gold_processor import build_gold_metrics_1min
 from jdbc_utils import get_postgres_options
 from pyspark.sql.functions import col, from_json, to_timestamp
 from silver_transformations import (
@@ -33,27 +34,55 @@ def create_spark_session():
     return spark
 
 def write_to_postgres(batch_df, batch_id):
-
+    spark = batch_df.sparkSession
+    
     if batch_df.isEmpty():
         print(f"Batch {batch_id} is empty")
         return
 
     print(f"Processing batch {batch_id}")
 
-    # Step 1: Write raw records to Bronze
+    # Step 1: Write raw records to Bronze staging
     (
         batch_df.write
         .format("jdbc")
         .options(
             **get_postgres_options(
-                table_name="bronze.stock_events"
+                table_name="bronze.stock_events_staging"
             )
         )
         .mode("append")
         .save()
     )
 
-    print(f"Batch {batch_id} written to bronze.stock_events")
+    print(
+        f"Batch {batch_id} written to "
+        "bronze.stock_events_staging"
+    )
+
+    bronze_merge_query = (
+        "SELECT bronze.merge_stock_events() "
+        "AS inserted_count"
+    )
+
+    bronze_merge_result = (
+        spark.read
+        .format("jdbc")
+        .options(
+            **get_postgres_options(
+                query=bronze_merge_query
+            )
+        )
+        .load()
+        .collect()
+    )
+
+    bronze_inserted_count = bronze_merge_result[0]["inserted_count"]
+
+    print(
+        f"Batch {batch_id} merged into bronze.stock_events. "
+        f"New rows inserted: {bronze_inserted_count}"
+    )
 
     # Step 2: Build valid and rejected DataFrames
     silver_df = transform_to_silver(batch_df)
@@ -112,14 +141,11 @@ def write_to_postgres(batch_df, batch_id):
     merge_result = (
         spark.read
         .format("jdbc")
-        .option(
-            "url",
-            "jdbc:postgresql://postgres:5432/stock_market"
+        .options(
+            **get_postgres_options(
+                query=merge_query
+            )
         )
-        .option("query", merge_query)
-        .option("user", "stock_user")
-        .option("password", "stock_password")
-        .option("driver", "org.postgresql.Driver")
         .load()
         .collect()
     )
@@ -130,6 +156,70 @@ def write_to_postgres(batch_df, batch_id):
         f"Batch {batch_id} merged into silver.stock_events. "
         f"New rows inserted: {inserted_count}"
     )    
+
+    # Step 4: Build Gold one-minute metrics
+    gold_df = (
+        build_gold_metrics_1min(silver_df)
+        .withColumn(
+            "spark_batch_id",
+            F.lit(batch_id).cast("long")
+        )
+    )
+
+    if gold_df.isEmpty():
+        print(f"No Gold records for batch {batch_id}")
+
+    else:
+        print(f"Gold output for batch {batch_id}")
+
+        gold_df.show(
+            n=20,
+            truncate=False
+        )
+
+        # Write Gold aggregates to staging
+        (
+            gold_df.write
+            .format("jdbc")
+            .options(
+                **get_postgres_options(
+                    table_name="gold.stock_metrics_1min_staging"
+                )
+            )
+            .mode("append")
+            .save()
+        )
+        
+        print(
+            f"Batch {batch_id} written to "
+            "gold.stock_metrics_1min_staging"
+        )
+
+        # Merge Gold staging into final Gold table
+        gold_merge_query = (
+            f"SELECT gold.merge_stock_metrics_1min({batch_id}) "
+            "AS affected_count"
+        )
+
+        gold_merge_result = (
+            spark.read
+            .format("jdbc")
+            .options(
+                **get_postgres_options(
+                    query=gold_merge_query
+                )
+            )
+            .load()
+            .collect()
+        )
+
+        affected_count = gold_merge_result[0]["affected_count"]
+
+        print(
+            f"Batch {batch_id} merged into "
+            "gold.stock_metrics_1min. "
+            f"Rows affected: {affected_count}"
+        )
 
     # Check rejected records
     rejected_count = rejected_df.count()
