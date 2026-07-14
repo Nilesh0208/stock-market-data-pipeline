@@ -35,7 +35,6 @@ def create_spark_session():
 
 def write_to_postgres(batch_df, batch_id):
     spark = batch_df.sparkSession
-    
     if batch_df.isEmpty():
         print(f"Batch {batch_id} is empty")
         return
