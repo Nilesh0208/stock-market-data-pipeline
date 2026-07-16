@@ -6,6 +6,7 @@ and displays streaming data.
 """
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
+from data_quality_utils import evaluate_batch_quality
 from gold_processor import build_gold_metrics_1min
 from jdbc_utils import get_postgres_options
 from pyspark.sql.functions import col, from_json, to_timestamp
@@ -244,7 +245,43 @@ def write_to_postgres(batch_df, batch_id):
 
         # Check rejected records
         rejected_count = rejected_df.count()
+        valid_record_count = silver_df.count()
+        latency_metrics = (
+            silver_df
+            .agg(
+                F.avg("processing_latency_ms").alias(
+                    "average_latency_ms"
+                ),
+                F.max("processing_latency_ms").alias(
+                    "maximum_latency_ms"
+                )
+            )
+            .collect()[0]
+        )
 
+        average_latency_ms = (
+            float(
+                latency_metrics[
+                    "average_latency_ms"
+                ]
+            )
+            if latency_metrics[
+                "average_latency_ms"
+            ] is not None
+            else None
+        )
+
+        maximum_latency_ms = (
+            int(
+                latency_metrics[
+                    "maximum_latency_ms"
+                ]
+            )
+            if latency_metrics[
+                "maximum_latency_ms"
+            ] is not None
+            else None
+        )
         print(f"Rejected records in batch {batch_id}: {rejected_count}")
 
         if rejected_count > 0:
@@ -270,6 +307,21 @@ def write_to_postgres(batch_df, batch_id):
                 f"Rejected records from batch {batch_id} "
                 "written to silver.stock_events_rejected"
             )
+
+        quality_status = evaluate_batch_quality(
+            spark=spark,
+            batch_id=batch_id,
+            source_record_count=source_record_count,
+            valid_record_count=valid_record_count,
+            rejected_record_count=rejected_count,
+            average_latency_ms=average_latency_ms,
+            maximum_latency_ms=maximum_latency_ms           
+        )
+
+        print(
+            f"[DATA QUALITY] Final status for batch "
+            f"{batch_id}: {quality_status}"
+        )
         complete_batch(
             spark=spark,
             batch_id=batch_id,
