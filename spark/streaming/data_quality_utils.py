@@ -3,10 +3,8 @@ from typing import Optional
 
 from pyspark.sql import SparkSession
 
+from config.settings import settings
 from jdbc_utils import get_postgres_options
-
-
-PIPELINE_NAME = "stock_market_medallion_pipeline"
 
 
 def _execute_query(
@@ -71,16 +69,24 @@ def evaluate_batch_quality(
 
     query = (
         "SELECT monitoring.evaluate_batch_quality("
-        f"'{PIPELINE_NAME}', "
-        f"{batch_id}, "
-        f"{source_record_count}, "
-        f"{valid_record_count}, "
-        f"{rejected_record_count}, "
-        f"{average_latency_sql}, "
-        f"{maximum_latency_sql}"
+        f"'{settings.DQ_ALERT_PIPELINE_NAME}'::VARCHAR, "
+        f"{int(batch_id)}::BIGINT, "
+        f"{int(source_record_count)}::BIGINT, "
+        f"{int(valid_record_count)}::BIGINT, "
+        f"{int(rejected_record_count)}::BIGINT, "
+        f"{average_latency_sql}::NUMERIC, "
+        f"{maximum_latency_sql}::BIGINT, "
+        f"{settings.DQ_WARNING_REJECTION_RATE_PCT}::NUMERIC, "
+        f"{settings.DQ_CRITICAL_REJECTION_RATE_PCT}::NUMERIC, "
+        f"{settings.DQ_WARNING_AVG_LATENCY_MS}::NUMERIC, "
+        f"{settings.DQ_CRITICAL_AVG_LATENCY_MS}::NUMERIC, "
+        f"{int(settings.DQ_CRITICAL_MAX_LATENCY_MS)}::BIGINT"
         ") AS quality_status"
     )
-
+    print(
+    f"[DATA QUALITY SQL] {query}"
+    )
+    
     result = _execute_query(
         spark=spark,
         query=query

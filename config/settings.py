@@ -70,5 +70,35 @@ class Settings:
 
     POSTGRES_DRIVER = "org.postgresql.Driver"
 
+    # Data Quality thresholds
+    DQ_WARNING_REJECTION_RATE_PCT = float(
+        os.getenv("DQ_WARNING_REJECTION_RATE_PCT", "5")
+    )
 
+    DQ_CRITICAL_REJECTION_RATE_PCT = float(
+        os.getenv("DQ_CRITICAL_REJECTION_RATE_PCT", "20")
+    )
+
+    DQ_WARNING_AVG_LATENCY_MS = float(
+        os.getenv("DQ_WARNING_AVG_LATENCY_MS", "3000")
+    )
+
+    DQ_CRITICAL_AVG_LATENCY_MS = float(
+        os.getenv("DQ_CRITICAL_AVG_LATENCY_MS", "8000")
+    )
+
+    DQ_CRITICAL_MAX_LATENCY_MS = float(
+        os.getenv("DQ_CRITICAL_MAX_LATENCY_MS", "10000")
+    )
+
+    # Alert configuration
+    DQ_ALERTS_ENABLED = (
+        os.getenv("DQ_ALERTS_ENABLED", "true").strip().lower() == "true"
+    )
+
+    DQ_ALERT_PIPELINE_NAME = os.getenv(
+        "DQ_ALERT_PIPELINE_NAME",
+        "stock-market-streaming-pipeline",
+    )
+    
 settings = Settings()

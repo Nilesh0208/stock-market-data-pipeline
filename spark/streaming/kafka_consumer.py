@@ -4,11 +4,15 @@ Spark Structured Streaming Kafka Consumer
 Reads stock market events from Kafka topic
 and displays streaming data.
 """
+from alert_processor import build_pipeline_alert
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from data_quality_utils import evaluate_batch_quality
 from gold_processor import build_gold_metrics_1min
-from jdbc_utils import get_postgres_options
+from jdbc_utils import (
+    get_postgres_options,
+    merge_pipeline_alerts,
+)
 from pyspark.sql.functions import col, from_json, to_timestamp
 from silver_transformations import (
     transform_to_silver,
@@ -322,6 +326,100 @@ def write_to_postgres(batch_df, batch_id):
             f"[DATA QUALITY] Final status for batch "
             f"{batch_id}: {quality_status}"
         )
+
+        # Build a one-row DataFrame for operational alert evaluation
+        rejection_rate_pct = (
+            (rejected_count / source_record_count) * 100
+            if source_record_count > 0
+            else 0.0
+        )
+
+        data_quality_df = spark.createDataFrame(
+            [
+                (
+                    int(batch_id),
+                    int(source_record_count),
+                    int(valid_record_count),
+                    int(rejected_count),
+                    float(rejection_rate_pct),
+                    (
+                        float(average_latency_ms)
+                        if average_latency_ms is not None
+                        else None
+                    ),
+                    (
+                        float(maximum_latency_ms)
+                        if maximum_latency_ms is not None
+                        else None
+                    ),
+                    str(quality_status),
+                )
+            ],
+            schema="""
+                batch_id LONG,
+                source_count LONG,
+                valid_count LONG,
+                rejected_count LONG,
+                rejection_rate_pct DOUBLE,
+                average_latency_ms DOUBLE,
+                maximum_latency_ms DOUBLE,
+                health_status STRING
+            """,
+        )
+        
+        # Generate an alert only for WARNING or CRITICAL
+        alert_df = build_pipeline_alert(data_quality_df)
+
+        if alert_df is None:
+            print(
+                f"Operational alerting is disabled "
+                f"for batch {batch_id}"
+            )
+
+        elif alert_df.isEmpty():
+            print(
+                f"No operational alert required "
+                f"for batch {batch_id}"
+            )
+
+        else:
+            print(
+                f"Operational alert detected "
+                f"for batch {batch_id}"
+            )
+
+            alert_df.show(
+                n=20,
+                truncate=False
+            )
+
+            (
+                alert_df.write
+                .format("jdbc")
+                .options(
+                    **get_postgres_options(
+                        table_name=(
+                            "monitoring."
+                            "pipeline_alerts_staging"
+                        )
+                    )
+                )
+                .mode("append")
+                .save()
+            )
+
+            print(
+                f"Alert from batch {batch_id} written to "
+                "monitoring.pipeline_alerts_staging"
+            )
+
+            merge_pipeline_alerts()
+
+            print(
+                f"Operational alert for batch {batch_id} "
+                "merged successfully"
+            )
+
         complete_batch(
             spark=spark,
             batch_id=batch_id,
