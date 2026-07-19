@@ -101,4 +101,71 @@ class Settings:
         "stock-market-streaming-pipeline",
     )
     
+    # External email notification configuration
+    CRITICAL_EMAIL_NOTIFICATIONS_ENABLED = (
+        os.getenv(
+            "CRITICAL_EMAIL_NOTIFICATIONS_ENABLED",
+            "false",
+        ).strip().lower() == "true"
+    )
+
+    SMTP_HOST = os.getenv(
+        "SMTP_HOST",
+        "smtp.gmail.com",
+    )
+
+    SMTP_PORT = int(
+        os.getenv(
+            "SMTP_PORT",
+            "587",
+        )
+    )
+
+    SMTP_USE_TLS = (
+        os.getenv(
+            "SMTP_USE_TLS",
+            "true",
+        ).strip().lower() == "true"
+    )
+
+    SMTP_USERNAME = os.getenv(
+        "SMTP_USERNAME",
+        "",
+    )
+
+    SMTP_PASSWORD = os.getenv(
+        "SMTP_PASSWORD",
+        "",
+    )
+
+    ALERT_EMAIL_FROM = os.getenv(
+        "ALERT_EMAIL_FROM",
+        "",
+    )
+
+    ALERT_EMAIL_TO = os.getenv(
+        "ALERT_EMAIL_TO",
+        "",
+    )
+
+    EMAIL_NOTIFICATION_MAXIMUM_ATTEMPTS = int(
+        os.getenv(
+            "EMAIL_NOTIFICATION_MAXIMUM_ATTEMPTS",
+            "3",
+        )
+    )
+
+    EMAIL_NOTIFICATION_RETRY_DELAY_SECONDS = int(
+        os.getenv(
+            "EMAIL_NOTIFICATION_RETRY_DELAY_SECONDS",
+            "60",
+        )
+    )
+
+    SMTP_CONNECTION_TIMEOUT_SECONDS = int(
+        os.getenv(
+            "SMTP_CONNECTION_TIMEOUT_SECONDS",
+            "30",
+        )
+    )
 settings = Settings()

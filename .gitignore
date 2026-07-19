@@ -5,9 +5,34 @@
 __pycache__/
 *.pyc
 
-# IDE
+# Logs
+*.log
+
+# Environment variables and secrets
+.env
+
+# Python virtual environments
+.venv/
+venv/
+env/
+
+# Python-generated files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE files
 .vscode/
 .idea/
 
-# Logs
-*.log
+# Operating-system files
+.DS_Store
+Thumbs.db
+
+# Generated local files
+project_structure.txt
+
+# Spark checkpoints and temporary files
+checkpoints/
+spark_checkpoints/
+.tmp/
