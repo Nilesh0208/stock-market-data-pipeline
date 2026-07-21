@@ -1,4 +1,5 @@
 name: stock-market-pipeline
+
 services:
 
   postgres:
@@ -17,6 +18,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: stock-pgadmin
@@ -30,14 +32,16 @@ services:
       - "8080:80"
 
     volumes:
-    - pgadmin_data:/var/lib/pgadmin
+      - pgadmin_data:/var/lib/pgadmin
 
     depends_on:
       - postgres
 
+
   stock-kafka:
     image: apache/kafka:3.8.0
     container_name: stock-kafka
+    restart: unless-stopped
 
     ports:
       - "9092:9092"
@@ -45,46 +49,40 @@ services:
 
     environment:
       KAFKA_NODE_ID: 1
-
       KAFKA_PROCESS_ROLES: broker,controller
-
       KAFKA_LOG_DIRS: /var/lib/kafka/data
 
-      KAFKA_LISTENERS: >
+      KAFKA_LISTENERS: >-
         PLAINTEXT_HOST://:9092,
         PLAINTEXT_DOCKER://:29092,
         CONTROLLER://:9093
 
-      KAFKA_ADVERTISED_LISTENERS: >
+      KAFKA_ADVERTISED_LISTENERS: >-
         PLAINTEXT_HOST://localhost:9092,
         PLAINTEXT_DOCKER://stock-kafka:29092
 
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: >
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: >-
         PLAINTEXT_HOST:PLAINTEXT,
         PLAINTEXT_DOCKER:PLAINTEXT,
         CONTROLLER:PLAINTEXT
 
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_DOCKER
-
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@stock-kafka:9093
-
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
 
     volumes:
       - kafka_data:/var/lib/kafka/data
 
+
   spark-master:
     build:
       context: .
       dockerfile: Dockerfile.spark
+
     image: stock-spark:3.5.6
     container_name: stock-spark-master
     hostname: spark-master
@@ -100,7 +98,7 @@ services:
       --port 7077
       --webui-port 8080
 
-    ports: 
+    ports:
       - "7077:7077"
       - "8082:8080"
 
@@ -109,10 +107,12 @@ services:
       - spark_checkpoints:/opt/spark-checkpoints
       - ../config:/opt/spark-apps/config
 
+
   spark-worker:
     build:
       context: .
       dockerfile: Dockerfile.spark
+
     image: stock-spark:3.5.6
     container_name: stock-spark-worker
     hostname: spark-worker
@@ -138,6 +138,7 @@ services:
       - spark_checkpoints:/opt/spark-checkpoints
       - ../config:/opt/spark-apps/config
 
+
   stock-grafana:
     image: grafana/grafana:latest
     container_name: stock-grafana
@@ -157,9 +158,146 @@ services:
     depends_on:
       - postgres
 
+
+  airflow-postgres:
+    image: postgres:16
+    container_name: stock-airflow-postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+
+    volumes:
+      - airflow_postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+
+  airflow-init:
+    image: ${AIRFLOW_IMAGE_NAME}
+    container_name: stock-airflow-init
+    restart: "no"
+
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: >-
+        postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow
+
+      AIRFLOW__WEBSERVER__SECRET_KEY: stock-market-airflow-secret-key
+
+      _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_ADMIN_USERNAME}
+      _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD}
+      _AIRFLOW_WWW_USER_FIRSTNAME: ${AIRFLOW_ADMIN_FIRSTNAME}
+      _AIRFLOW_WWW_USER_LASTNAME: ${AIRFLOW_ADMIN_LASTNAME}
+      _AIRFLOW_WWW_USER_EMAIL: ${AIRFLOW_ADMIN_EMAIL}
+      _AIRFLOW_WWW_USER_ROLE: Admin
+
+    user: "${AIRFLOW_UID}:0"
+
+    volumes:
+      - ../airflow/dags:/opt/airflow/dags
+      - ../airflow/logs:/opt/airflow/logs
+      - ../airflow/plugins:/opt/airflow/plugins
+      - ../airflow/config:/opt/airflow/config
+
+    command:
+      - bash
+      - -c
+      - |
+        airflow db migrate &&
+        airflow users create \
+          --username "$${_AIRFLOW_WWW_USER_USERNAME}" \
+          --password "$${_AIRFLOW_WWW_USER_PASSWORD}" \
+          --firstname "$${_AIRFLOW_WWW_USER_FIRSTNAME}" \
+          --lastname "$${_AIRFLOW_WWW_USER_LASTNAME}" \
+          --role "$${_AIRFLOW_WWW_USER_ROLE}" \
+          --email "$${_AIRFLOW_WWW_USER_EMAIL}" || true
+
+
+  airflow-webserver:
+    image: ${AIRFLOW_IMAGE_NAME}
+    container_name: stock-airflow-webserver
+    restart: unless-stopped
+
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: >-
+        postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow
+
+      AIRFLOW__WEBSERVER__SECRET_KEY: stock-market-airflow-secret-key
+
+    user: "${AIRFLOW_UID}:0"
+
+    command: webserver
+
+    ports:
+      - "8083:8080"
+
+    volumes:
+      - ../airflow/dags:/opt/airflow/dags
+      - ../airflow/logs:/opt/airflow/logs
+      - ../airflow/plugins:/opt/airflow/plugins
+      - ../airflow/config:/opt/airflow/config
+
+
+  airflow-scheduler:
+    image: ${AIRFLOW_IMAGE_NAME}
+    container_name: stock-airflow-scheduler
+    restart: unless-stopped
+
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: >-
+        postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow
+
+      AIRFLOW__WEBSERVER__SECRET_KEY: stock-market-airflow-secret-key
+
+    user: "${AIRFLOW_UID}:0"
+
+    command: scheduler
+
+    volumes:
+      - ../airflow/dags:/opt/airflow/dags
+      - ../airflow/logs:/opt/airflow/logs
+      - ../airflow/plugins:/opt/airflow/plugins
+      - ../airflow/config:/opt/airflow/config
+
+
 volumes:
   postgres_data:
   pgadmin_data:
   kafka_data:
   spark_checkpoints:
   grafana_data:
+  airflow_postgres_data:

@@ -36,3 +36,13 @@ project_structure.txt
 checkpoints/
 spark_checkpoints/
 .tmp/
+
+
+# ============================================================
+# Apache Airflow runtime files
+# ============================================================
+
+airflow/logs/
+airflow/plugins/__pycache__/
+airflow/config/__pycache__/
+airflow/dags/__pycache__/
