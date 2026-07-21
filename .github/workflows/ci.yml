@@ -44,13 +44,14 @@ jobs:
           python -m compileall airflow/dags
 
       - name: Run tests when available
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           if [ -d "tests" ]; then
-            pytest -v
+            python -m pytest -v
           else
             echo "No tests directory found yet. Skipping pytest."
           fi
-
 
   project-structure-validation:
     name: Project Structure Validation
